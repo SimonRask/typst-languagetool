@@ -1,7 +1,3 @@
-mod convert;
-mod output;
-mod rules;
-
 use clap::{Parser, ValueEnum};
 use languagetool_rust::{
 	check::{CheckRequest, Data},
@@ -9,13 +5,16 @@ use languagetool_rust::{
 };
 use notify::RecursiveMode;
 use notify_debouncer_mini::new_debouncer;
-use output::Position;
-use rules::Rules;
 use std::{
 	error::Error,
 	fs,
 	path::{Path, PathBuf},
 	time::Duration,
+};
+use typst_lt::{
+	convert,
+	output::{self, Position},
+	rules::Rules,
 };
 
 #[derive(ValueEnum, Clone, Debug)]

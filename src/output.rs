@@ -1,10 +1,77 @@
-use std::{io::stdout, io::Write, path::Path, str::Chars};
+use std::{collections::HashMap, io::stdout, io::Write, path::Path, str::Chars};
 
 use annotate_snippets::{
 	display_list::{DisplayList, FormatOptions},
 	snippet::{Annotation, AnnotationType, Slice, Snippet, SourceAnnotation},
 };
 use languagetool_rust::{check::Match, CheckResponse};
+use tower_lsp::lsp_types::{
+	self, CodeAction, CodeActionKind, CodeActionOrCommand, Diagnostic, TextEdit, WorkspaceEdit,
+};
+
+pub fn output_diagnostics(
+	start: &mut Position,
+	response: &CheckResponse,
+	total: usize,
+	url: lsp_types::Url,
+) -> Vec<(Diagnostic, Vec<CodeActionOrCommand>)> {
+	let mut last = 0;
+	let mut diagnostics = Vec::new();
+	for info in &response.matches {
+		start.advance(info.offset - last);
+		let mut end = start.clone();
+		end.advance(info.length);
+
+		let range = lsp_types::Range {
+			start: lsp_types::Position {
+				line: start.line as u32 - 1,
+				character: start.column as u32 - 1,
+			},
+			end: lsp_types::Position {
+				line: end.line as u32 - 1,
+				character: end.column as u32 - 1,
+			},
+		};
+		let actions: Vec<CodeActionOrCommand> = info
+			.replacements
+			.iter()
+			.map(|replacement| {
+				CodeActionOrCommand::CodeAction(CodeAction {
+					title: format!(
+						"Replace with '{replacement}'",
+						replacement = replacement.value
+					),
+					kind: Some(CodeActionKind::QUICKFIX),
+					edit: Some(WorkspaceEdit {
+						changes: Some(HashMap::from_iter(
+							[(
+								url.clone(),
+								vec![TextEdit::new(range, replacement.value.clone())],
+							)]
+							.into_iter(),
+						)),
+						..Default::default()
+					}),
+					is_preferred: Some(true),
+					..Default::default()
+				})
+			})
+			.collect();
+
+		let diagnostic = Diagnostic {
+			range,
+			message: info.message.clone(),
+			// data: Some(serde_json::to_value(actions).unwrap()),
+			..Default::default()
+		};
+		diagnostics.push((diagnostic, actions));
+
+		last = info.offset;
+	}
+	start.advance(total - last);
+
+	diagnostics
+}
 
 pub fn output_plain(file: &Path, start: &mut Position, response: &CheckResponse, total: usize) {
 	let mut last = 0;
